@@ -3,20 +3,39 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { UserEntity } from '../models/user.entity';
 import { Repository } from 'typeorm';
 import { User } from '../models/user.interface';
-import { Observable, from } from 'rxjs';
+import { Observable, from, throwError } from 'rxjs';
+import{switchMap, map, catchError} from 'rxjs/operators';
+import { AuthService } from 'src/auth/services/auth.service';
 
 @Injectable()
 export class UserService {
 
     constructor(
-        @InjectRepository(UserEntity) private readonly userRepository: Repository<UserEntity>
-
+        @InjectRepository(UserEntity) private readonly userRepository: Repository<UserEntity>,
+        private authService: AuthService
     ){
 
     }
 
     create(user: User): Observable<User>{
-        return from(this.userRepository.save(user));
+        return this.authService.hashPassword(user.password).pipe(
+            switchMap((passwordHash: string) => {
+                const newUser = new UserEntity();
+                newUser.name=user.name;
+                newUser.username=user.username;
+                newUser.email=user.email;
+                newUser.password=passwordHash;
+                
+                return from(this.userRepository.save(newUser)).pipe(
+                    map((user: User) => {
+                        const {password, ...result} = user;
+                        return result;
+                    }),
+                    catchError(err => throwError(err))
+                )
+            })
+        )
+        
     }
 
     findOne(id: number): Observable<User>{
